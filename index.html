@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stellar Wallet App</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons CDN for visual elements -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom styles for a cleaner UI */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+        .dark body {
+            background-color: #111827;
+            color: #e5e7eb;
+        }
+        .container {
+            max-width: 960px;
+        }
+        .icon {
+            display: inline-block;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app" class="min-h-screen flex items-center justify-center p-4">
+        <!-- App content will be dynamically loaded here by JavaScript -->
+    </div>
+
+    <script>
+        // === Global State Management ===
+        let state = {
+            token: localStorage.getItem('token') || null,
+            isLoggedIn: false,
+            wallet: null,
+            balance: null,
+            history: [],
+            message: '',
+            error: '',
+            // The 'view' determines which main UI section to display
+            view: 'auth' // 'auth' or 'dashboard'
+        };
+
+        const API_BASE_URL = 'http://localhost:3000/api';
+        const appContainer = document.getElementById('app');
+
+        // === API Fetch Helper Function ===
+        async function fetchApi(endpoint, method = 'GET', body = null) {
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+            if (state.token) {
+                headers['Authorization'] = `Bearer ${state.token}`;
+            }
+
+            const options = { method, headers };
+            if (body) {
+                options.body = JSON.stringify(body);
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/${endpoint}`, options);
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Something went wrong');
+                }
+                return data;
+            } catch (err) {
+                console.error('API Error:', err.message);
+                state.error = err.message;
+                render();
+                return null;
+            }
+        }
+
+        // === UI Rendering Functions ===
+
+        // The main render function that updates the entire UI
+        function render() {
+            state.message = '';
+            state.error = '';
+
+            appContainer.innerHTML = ''; // Clear the previous content
+            if (state.view === 'auth') {
+                appContainer.innerHTML = renderAuthPage();
+                attachAuthEvents();
+            } else if (state.view === 'dashboard') {
+                appContainer.innerHTML = renderDashboardPage();
+                attachDashboardEvents();
+            }
+
+            // Manually initialize Lucide icons after rendering the HTML
+            lucide.createIcons();
+        }
+        
+        // Renders the authentication view (Login/Register)
+        function renderAuthPage() {
+            const messageHtml = state.message ? `<div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg mb-4">${state.message}</div>` : '';
+            const errorHtml = state.error ? `<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4">${state.error}</div>` : '';
+            
+            return `
+                <div class="flex flex-col items-center justify-center p-4">
+                    <h1 class="text-3xl font-bold mb-6 text-gray-800 dark:text-gray-100">Stellar Wallet API App</h1>
+                    <div class="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-md">
+                        <div class="text-center mb-6">
+                            <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Login / Register</h2>
+                        </div>
+                        ${errorHtml}
+                        ${messageHtml}
+                        
+                        <!-- Login Form -->
+                        <form id="login-form" class="space-y-4">
+                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2"><i data-lucide="log-in" class="icon"></i> Log In</h2>
+                            <div>
+                                <label class="block text-gray-700 dark:text-gray-300">Username</label>
+                                <input type="text" id="login-username" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white p-2" required />
+                            </div>
+                            <div>
+                                <label class="block text-gray-700 dark:text-gray-300">Password</label>
+                                <input type="password" id="login-password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white p-2" required />
+                            </div>
+                            <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors duration-200">
+                                Log In
+                            </button>
+                        </form>
+
+                        <hr class="my-6 border-gray-300 dark:border-gray-600" />
+                        
+                        <!-- Registration Form -->
+                        <form id="register-form" class="space-y-4">
+                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2"><i data-lucide="user-plus" class="icon"></i> Register</h2>
+                            <div>
+                                <label class="block text-gray-700 dark:text-gray-300">Username</label>
+                                <input type="text" id="register-username" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white p-2" required />
+                            </div>
+                            <div>
+                                <label class="block text-gray-700 dark:text-gray-300">Password</label>
+                                <input type="password" id="register-password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white p-2" required />
+                            </div>
+                            <button type="submit" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors duration-200">
+                                Register
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Renders the dashboard view
+        function renderDashboardPage() {
+            const messageHtml = state.message ? `<div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg mb-4">${state.message}</div>` : '';
+            const errorHtml = state.error ? `<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4">${state.error}</div>` : '';
+            
+            const walletHtml = state.wallet ? `
+                <div class="space-y-6">
+                    <!-- Wallet and Balance Section -->
+                    <div class="bg-gray-100 dark:bg-gray-700 p-6 rounded-lg shadow-inner">
+                        <h2 class="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-2"><i data-lucide="wallet" class="icon"></i> My Wallet</h2>
+                        <p class="font-mono break-all text-gray-700 dark:text-gray-300 mb-2">
+                            <strong>Public Key:</strong> ${state.wallet.publicKey}
+                        </p>
+                        <p class="text-2xl font-bold text-gray-900 dark:text-white flex items-baseline gap-2">
+                            <strong>Balance:</strong> ${state.balance !== null ? `${state.balance} XLM` : 'Loading...'}
+                            <button id="refresh-balance-btn" class="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 transition-colors duration-200 ml-auto">
+                                Refresh
+                            </button>
+                        </p>
+                    </div>
+                    
+                    <!-- Send Payment Form -->
+                    <form id="send-payment-form" class="space-y-4 bg-gray-100 dark:bg-gray-700 p-6 rounded-lg shadow-inner">
+                        <h2 class="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2"><i data-lucide="send" class="icon"></i> Send Payment</h2>
+                        <div>
+                            <label class="block text-gray-700 dark:text-gray-300">Destination Public Key</label>
+                            <input type="text" id="destination-key" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 dark:bg-gray-600 dark:border-gray-500 dark:text-white p-2" required />
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 dark:text-gray-300">Amount (XLM)</label>
+                            <input type="number" id="send-amount" step="0.0000001" min="0.0000001" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 dark:bg-gray-600 dark:border-gray-500 dark:text-white p-2" required />
+                        </div>
+                        <button type="submit" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors duration-200">
+                            Send
+                        </button>
+                    </form>
+
+                    <!-- Transaction History Section -->
+                    <div class="bg-gray-100 dark:bg-gray-700 p-6 rounded-lg shadow-inner">
+                        <h2 class="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4"><i data-lucide="history" class="icon"></i> Transaction History</h2>
+                        <button id="fetch-history-btn" class="mb-4 bg-purple-600 text-white py-2 px-4 rounded-md hover:bg-purple-700 transition-colors duration-200">
+                            Fetch History
+                        </button>
+                        ${renderHistoryList()}
+                    </div>
+                </div>
+            ` : `
+                <div class="text-center">
+                    <p class="text-gray-700 dark:text-gray-300 mb-4">You don't have a wallet yet. Create one to get started!</p>
+                    <button id="create-wallet-btn" class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors duration-200">
+                        Create Wallet
+                    </button>
+                </div>
+            `;
+
+            return `
+                <div class="flex flex-col items-center p-4 container mx-auto">
+                    <header class="flex justify-between items-center w-full max-w-3xl mb-6">
+                        <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-100">Stellar Wallet Dashboard</h1>
+                        <button id="logout-btn" class="flex items-center gap-2 bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 transition-colors duration-200">
+                            <i data-lucide="log-out" class="icon"></i> Logout
+                        </button>
+                    </header>
+
+                    <div class="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-3xl">
+                        ${errorHtml}
+                        ${messageHtml}
+                        ${walletHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Renders the transaction history list
+        function renderHistoryList() {
+            if (state.history.length > 0) {
+                return `
+                    <ul class="space-y-2">
+                        ${state.history.map(tx => `
+                            <li class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+                                <p class="font-medium text-gray-900 dark:text-white">
+                                    <strong>Type:</strong> ${tx.type || 'N/A'}
+                                </p>
+                                <p class="text-sm font-mono text-gray-600 dark:text-gray-400">
+                                    <strong>From:</strong> ${tx.from ? tx.from.slice(0, 8) + '...' : 'N/A'}
+                                </p>
+                                <p class="text-sm font-mono text-gray-600 dark:text-gray-400">
+                                    <strong>To:</strong> ${tx.to ? tx.to.slice(0, 8) + '...' : 'N/A'}
+                                </p>
+                                <p class="font-bold ${tx.from === (state.wallet ? state.wallet.publicKey : null) ? 'text-red-500' : 'text-green-500'}">
+                                    ${tx.from === (state.wallet ? state.wallet.publicKey : null) ? '-' : '+'} ${tx.amount} ${tx.assetType === 'native' ? 'XLM' : (tx.asset_code || '???')}
+                                </p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">${new Date(tx.date).toLocaleString()}</p>
+                            </li>
+                        `).join('')}
+                    </ul>
+                `;
+            } else {
+                return `<p class="text-gray-700 dark:text-gray-300">No transactions found.</p>`;
+            }
+        }
+
+        // === Event Handlers ===
+
+        // Attaches event listeners for the authentication view
+        function attachAuthEvents() {
+            document.getElementById('login-form').addEventListener('submit', handleLogin);
+            document.getElementById('register-form').addEventListener('submit', handleRegister);
+        }
+
+        // Attaches event listeners for the dashboard view
+        function attachDashboardEvents() {
+            document.getElementById('logout-btn').addEventListener('click', handleLogout);
+            if (state.wallet) {
+                document.getElementById('refresh-balance-btn').addEventListener('click', handleFetchBalance);
+                document.getElementById('send-payment-form').addEventListener('submit', handleSendPayment);
+                document.getElementById('fetch-history-btn').addEventListener('click', handleFetchHistory);
+            } else {
+                document.getElementById('create-wallet-btn').addEventListener('click', handleCreateWallet);
+            }
+        }
+
+        // Handler for user registration
+        async function handleRegister(e) {
+            e.preventDefault();
+            const username = document.getElementById('register-username').value;
+            const password = document.getElementById('register-password').value;
+            const data = await fetchApi('auth/register', 'POST', { username, password });
+            if (data) {
+                state.message = 'Registration successful! You can now log in.';
+                render();
+            }
+        }
+
+        // Handler for user login
+        async function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            const data = await fetchApi('auth/login', 'POST', { username, password });
+            if (data && data.token) {
+                state.token = data.token;
+                localStorage.setItem('token', data.token);
+                state.isLoggedIn = true;
+                state.view = 'dashboard';
+                state.message = 'Login successful!';
+                render();
+                fetchWalletDetails();
+            }
+        }
+        
+        // Handler for user logout
+        function handleLogout() {
+            state.token = null;
+            localStorage.removeItem('token');
+            state.isLoggedIn = false;
+            state.view = 'auth';
+            state.wallet = null;
+            state.balance = null;
+            state.history = [];
+            state.message = 'You have been logged out.';
+            render();
+        }
+
+        // Handler for creating a new Stellar wallet
+        async function handleCreateWallet() {
+            const data = await fetchApi('wallet/create', 'POST');
+            if (data) {
+                state.message = 'Wallet created and funded successfully!';
+                state.wallet = { publicKey: data.publicKey };
+                render();
+                fetchBalance(data.publicKey);
+            }
+        }
+
+        // Fetches the balance for a given public key
+        async function fetchBalance(publicKey) {
+            const data = await fetchApi(`wallet/${publicKey}/balance`);
+            if (data) {
+                state.balance = data.balance;
+                state.message = 'Balance fetched successfully.';
+                render();
+            }
+        }
+        
+        // Handler to manually fetch the balance
+        function handleFetchBalance() {
+            if (state.wallet && state.wallet.publicKey) {
+                fetchBalance(state.wallet.publicKey);
+            }
+        }
+
+        // Fetches the transaction history for the user's wallet
+        async function handleFetchHistory() {
+            const data = await fetchApi('wallet/history');
+            if (data) {
+                state.history = data;
+                state.message = 'Transaction history fetched successfully.';
+                render();
+            }
+        }
+        
+        // Handler for sending a payment
+        async function handleSendPayment(e) {
+            e.preventDefault();
+            const destination = document.getElementById('destination-key').value;
+            const amount = document.getElementById('send-amount').value;
+            const data = await fetchApi('wallet/send-payment', 'POST', {
+                destinationPublicKey: destination,
+                amount: amount,
+            });
+            if (data) {
+                state.message = `Payment sent! Transaction hash: ${data.transactionHash}`;
+                // Clear the form fields
+                document.getElementById('destination-key').value = '';
+                document.getElementById('send-amount').value = '';
+                // Refresh balance and history
+                fetchBalance(state.wallet.publicKey);
+                handleFetchHistory();
+            }
+        }
+
+        // Fetches all wallet-related details for the dashboard
+        async function fetchWalletDetails() {
+            // First, try to fetch history to get the public key
+            const historyData = await fetchApi('wallet/history');
+            if (historyData && historyData.length > 0) {
+                // The public key can be found in the `from` field of a transaction
+                const publicKey = historyData[0].from; 
+                state.wallet = { publicKey };
+                state.history = historyData;
+                await fetchBalance(publicKey);
+            } else {
+                // If there's no history, assume no wallet is created yet
+                state.wallet = null;
+            }
+            render();
+        }
+
+        // === Initial App Load ===
+        document.addEventListener('DOMContentLoaded', () => {
+            if (state.token) {
+                state.isLoggedIn = true;
+                state.view = 'dashboard';
+                fetchWalletDetails();
+            }
+            render();
+        });
+
+    </script>
+</body>
+</html>
