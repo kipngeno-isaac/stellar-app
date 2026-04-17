@@ -41,14 +41,16 @@
             isLoggedIn: false,
             wallet: null,
             balance: null,
+            usdcBalance: null,
             history: [],
+            anchorTxs: [],
             message: '',
             error: '',
             // The 'view' determines which main UI section to display
             view: 'auth' // 'auth' or 'dashboard'
         };
 
-        const API_BASE_URL = 'http://localhost:3000/api';
+        const API_BASE_URL = 'http://localhost:4000/api';
         const appContainer = document.getElementById('app');
 
         // === API Fetch Helper Function ===
@@ -166,12 +168,19 @@
                         <p class="font-mono break-all text-gray-700 dark:text-gray-300 mb-2">
                             <strong>Public Key:</strong> ${state.wallet.publicKey}
                         </p>
-                        <p class="text-2xl font-bold text-gray-900 dark:text-white flex items-baseline gap-2">
-                            <strong>Balance:</strong> ${state.balance !== null ? `${state.balance} XLM` : 'Loading...'}
-                            <button id="refresh-balance-btn" class="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 transition-colors duration-200 ml-auto">
+                        <div class="flex items-center gap-4 mt-2">
+                            <div class="flex-1">
+                                <p class="text-sm text-gray-600 dark:text-gray-400">XLM</p>
+                                <p class="text-xl font-bold text-gray-900 dark:text-white">${state.balance !== null ? state.balance : 'Loading...'}</p>
+                            </div>
+                            <div class="flex-1">
+                                <p class="text-sm text-gray-600 dark:text-gray-400">USDC</p>
+                                <p class="text-xl font-bold text-gray-900 dark:text-white">${state.usdcBalance !== null ? state.usdcBalance : 'Loading...'}</p>
+                            </div>
+                            <button id="refresh-balance-btn" class="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 transition-colors duration-200">
                                 Refresh
                             </button>
-                        </p>
+                        </div>
                     </div>
                     
                     <!-- Send Payment Form -->
@@ -182,13 +191,31 @@
                             <input type="text" id="destination-key" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 dark:bg-gray-600 dark:border-gray-500 dark:text-white p-2" required />
                         </div>
                         <div>
-                            <label class="block text-gray-700 dark:text-gray-300">Amount (XLM)</label>
+                            <label class="block text-gray-700 dark:text-gray-300">Asset</label>
+                            <select id="send-asset" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 dark:bg-gray-600 dark:border-gray-500 dark:text-white p-2">
+                                <option value="native">XLM</option>
+                                <option value="USDC">USDC</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 dark:text-gray-300">Amount</label>
                             <input type="number" id="send-amount" step="0.0000001" min="0.0000001" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 dark:bg-gray-600 dark:border-gray-500 dark:text-white p-2" required />
                         </div>
                         <button type="submit" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors duration-200">
                             Send
                         </button>
                     </form>
+
+                    <!-- Anchor Deposit / Withdraw Section -->
+                    <div class="bg-gray-100 dark:bg-gray-700 p-6 rounded-lg shadow-inner">
+                        <h2 class="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4"><i data-lucide="banknote" class="icon"></i> Fiat On/Off-Ramp (SEP-24)</h2>
+                        <div class="flex gap-2 mb-4">
+                            <button id="deposit-btn" class="bg-emerald-600 text-white py-2 px-4 rounded-md hover:bg-emerald-700 transition-colors duration-200">Deposit USDC</button>
+                            <button id="withdraw-btn" class="bg-orange-600 text-white py-2 px-4 rounded-md hover:bg-orange-700 transition-colors duration-200">Withdraw USDC</button>
+                            <button id="refresh-anchor-btn" class="ml-auto text-sm text-blue-600 hover:text-blue-800">Refresh</button>
+                        </div>
+                        ${renderAnchorTxList()}
+                    </div>
 
                     <!-- Transaction History Section -->
                     <div class="bg-gray-100 dark:bg-gray-700 p-6 rounded-lg shadow-inner">
@@ -223,6 +250,28 @@
                         ${walletHtml}
                     </div>
                 </div>
+            `;
+        }
+
+        // Renders pending SEP-24 anchor transactions
+        function renderAnchorTxList() {
+            if (!state.anchorTxs || state.anchorTxs.length === 0) {
+                return `<p class="text-sm text-gray-600 dark:text-gray-400">No anchor transactions yet.</p>`;
+            }
+            return `
+                <ul class="space-y-2">
+                    ${state.anchorTxs.map(tx => {
+                        const needsSend = tx.kind === 'withdrawal' && tx.status === 'pending_user_transfer_start';
+                        return `
+                            <li class="bg-white dark:bg-gray-800 p-3 rounded-lg shadow text-sm">
+                                <p><strong>${tx.kind === 'deposit' ? 'Deposit' : 'Withdraw'}</strong> — ${tx.amount_in || '?'} ${tx.asset_code || ''}</p>
+                                <p class="text-gray-600 dark:text-gray-400">Status: <span class="font-mono">${tx.status}</span></p>
+                                <p class="text-xs text-gray-500 font-mono break-all">id: ${tx.id}</p>
+                                ${needsSend ? `<button data-tx-id="${tx.id}" class="complete-withdraw-btn mt-2 bg-orange-600 text-white py-1 px-3 rounded text-sm hover:bg-orange-700">Send ${tx.amount_in} USDC to anchor</button>` : ''}
+                                ${tx.more_info_url ? `<a href="${tx.more_info_url}" target="_blank" class="block mt-1 text-xs text-blue-600 hover:underline">More info</a>` : ''}
+                            </li>`;
+                    }).join('')}
+                </ul>
             `;
         }
 
@@ -270,8 +319,62 @@
                 document.getElementById('refresh-balance-btn').addEventListener('click', handleFetchBalance);
                 document.getElementById('send-payment-form').addEventListener('submit', handleSendPayment);
                 document.getElementById('fetch-history-btn').addEventListener('click', handleFetchHistory);
+                document.getElementById('deposit-btn').addEventListener('click', () => handleAnchorInteractive('deposit'));
+                document.getElementById('withdraw-btn').addEventListener('click', () => handleAnchorInteractive('withdraw'));
+                document.getElementById('refresh-anchor-btn').addEventListener('click', handleFetchAnchorTxs);
+                document.querySelectorAll('.complete-withdraw-btn').forEach(btn => {
+                    btn.addEventListener('click', () => handleCompleteWithdraw(btn.dataset.txId));
+                });
             } else {
                 document.getElementById('create-wallet-btn').addEventListener('click', handleCreateWallet);
+            }
+        }
+
+        // Opens the anchor's interactive URL in a popup and polls status
+        async function handleAnchorInteractive(kind) {
+            const data = await fetchApi(`anchor/${kind}`, 'POST');
+            if (!data || !data.url) return;
+            const popup = window.open(data.url, 'anchor', 'width=500,height=700');
+            state.message = `${kind} initiated. Complete the flow in the popup.`;
+            render();
+            pollAnchorTx(data.id, popup);
+        }
+
+        async function pollAnchorTx(id, popup) {
+            const interval = setInterval(async () => {
+                const tx = await fetchApi(`anchor/transactions/${id}`);
+                if (tx) {
+                    const idx = state.anchorTxs.findIndex(t => t.id === id);
+                    if (idx >= 0) state.anchorTxs[idx] = tx;
+                    else state.anchorTxs.unshift(tx);
+                    render();
+                    if (['completed', 'error', 'refunded', 'expired'].includes(tx.status)) {
+                        clearInterval(interval);
+                        if (state.wallet) fetchBalance(state.wallet.publicKey);
+                    }
+                }
+                if (popup && popup.closed) {
+                    await handleFetchAnchorTxs();
+                }
+            }, 4000);
+            // Stop polling after 10 minutes
+            setTimeout(() => clearInterval(interval), 10 * 60 * 1000);
+        }
+
+        async function handleFetchAnchorTxs() {
+            const data = await fetchApi('anchor/transactions');
+            if (data) {
+                state.anchorTxs = data;
+                render();
+            }
+        }
+
+        async function handleCompleteWithdraw(txId) {
+            const data = await fetchApi(`anchor/transactions/${txId}/complete`, 'POST');
+            if (data) {
+                state.message = `Withdrawal payment sent: ${data.transactionHash}`;
+                await handleFetchAnchorTxs();
+                if (state.wallet) fetchBalance(state.wallet.publicKey);
             }
         }
 
@@ -333,6 +436,7 @@
             const data = await fetchApi(`wallet/${publicKey}/balance`);
             if (data) {
                 state.balance = data.balance;
+                state.usdcBalance = data.usdcBalance;
                 state.message = 'Balance fetched successfully.';
                 render();
             }
@@ -360,9 +464,11 @@
             e.preventDefault();
             const destination = document.getElementById('destination-key').value;
             const amount = document.getElementById('send-amount').value;
+            const asset = document.getElementById('send-asset').value;
             const data = await fetchApi('wallet/send-payment', 'POST', {
                 destinationPublicKey: destination,
                 amount: amount,
+                asset: asset,
             });
             if (data) {
                 state.message = `Payment sent! Transaction hash: ${data.transactionHash}`;
@@ -377,16 +483,15 @@
 
         // Fetches all wallet-related details for the dashboard
         async function fetchWalletDetails() {
-            // First, try to fetch history to get the public key
-            const historyData = await fetchApi('wallet/history');
-            if (historyData && historyData.length > 0) {
-                // The public key can be found in the `from` field of a transaction
-                const publicKey = historyData[0].from; 
-                state.wallet = { publicKey };
-                state.history = historyData;
-                await fetchBalance(publicKey);
+            const walletData = await fetchApi('wallet/me');
+            if (walletData && walletData.publicKey) {
+                state.wallet = { publicKey: walletData.publicKey };
+                await fetchBalance(walletData.publicKey);
+                const historyData = await fetchApi('wallet/history');
+                if (historyData) state.history = historyData;
+                const anchorTxs = await fetchApi('anchor/transactions');
+                if (anchorTxs) state.anchorTxs = anchorTxs;
             } else {
-                // If there's no history, assume no wallet is created yet
                 state.wallet = null;
             }
             render();
